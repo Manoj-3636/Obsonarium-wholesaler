@@ -1,0 +1,86 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { fly } from 'svelte/transition';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+
+	let visible = false;
+	let tagline = '"Supply the stars"';
+	let hasRedirected = false;
+	
+	onMount(() => {
+		visible = true;
+		
+		// Check if user is already authenticated
+		// If so, redirect to dashboard (or onboarding if not onboarded)
+		checkAuth();
+	});
+
+	async function checkAuth() {
+		// Prevent multiple redirects
+		if (hasRedirected) return;
+
+		try {
+			const response = await fetch('/api/wholesalers/me', {
+				credentials: 'include'
+			});
+
+			// If not authenticated (401), stay on landing page
+			if (response.status === 401) {
+				return;
+			}
+
+			// If authenticated, redirect to appropriate page after a short delay
+			// This prevents jarring immediate redirects
+			if (response.ok) {
+				const data = await response.json();
+				// Small delay to let the page render first
+				setTimeout(async () => {
+					if (!hasRedirected) {
+						hasRedirected = true;
+						if (data.onboarded) {
+							await goto(resolve('/dashboard'));
+						} else {
+							await goto(resolve('/onboarding'));
+						}
+					}
+				}, 300);
+			}
+		} catch (error) {
+			// On error, stay on landing page
+			console.error('Error checking auth:', error);
+		}
+	}
+</script>
+
+<div
+	class="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-linear-to-br from-[#0a0a0a] via-[#161621] to-[#0a0a0a] p-4 font-sans text-white"
+>
+	<div
+		class="absolute inset-0 -z-10 animate-pulse bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),transparent_70%)]"
+	></div>
+
+	{#if visible}
+		<h1
+			class="bg-linear-to-r from-white to-gray-400 bg-clip-text text-5xl font-extrabold tracking-wide text-transparent drop-shadow-[0_0_25px_rgba(255,255,255,0.1)] sm:text-6xl md:text-7xl"
+			in:fly={{ y: -40, delay: 200, duration: 500 }}
+		>
+			Obsonarium
+		</h1>
+
+		<p
+			class="mt-3 text-lg font-light text-gray-300 italic sm:text-xl md:text-2xl"
+			in:fly={{ y: -40, delay: 200, duration: 500 }}
+		>
+			{tagline}
+		</p>
+		<div in:fly={{ y: 40, delay: 200, duration: 500 }} class="mt-10 flex-row space-x-1.5">
+			<a
+				class="mt-10 rounded-full bg-white px-8 py-3 text-lg font-medium text-gray-900 transition-all duration-300 hover:scale-105 hover:bg-gray-200"
+				href={resolve('/dashboard')}
+			>
+				Dashboard
+			</a>
+		</div>
+	{/if}
+</div>
