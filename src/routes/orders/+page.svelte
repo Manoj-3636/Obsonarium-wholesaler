@@ -3,9 +3,12 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { Loader2, Package, CheckCircle2, History } from '@lucide/svelte';
+	import { Loader2, Package, CheckCircle2, History, CalendarIcon } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
+	import * as Popover from '$lib/components/ui/popover';
+	import { Calendar } from '$lib/components/ui/calendar';
+	import { format } from 'date-fns';
 
 	interface OrderItem {
 		id: number;
@@ -35,6 +38,8 @@
 	let orders = $state<RetailerWholesaleOrder[]>([]);
 	let errorMessage = $state<string | null>(null);
 	let updatingItemId = $state<number | null>(null);
+	let showDatePickerForItem = $state<number | null>(null);
+	let selectedDeliveryDate = $state<any>(undefined);
 
 	onMount(() => {
 		loadOrders();
@@ -67,15 +72,20 @@
 		}
 	}
 
-	async function updateItemStatus(itemId: number, newStatus: string) {
+	async function updateItemStatus(itemId: number, newStatus: string, deliveryDate?: string) {
 		updatingItemId = itemId;
 
 		try {
+			const body: { status: string; delivery_date?: string } = { status: newStatus };
+			if (deliveryDate) {
+				body.delivery_date = deliveryDate;
+			}
+
 			const res = await fetch(`/api/wholesaler/orders/items/${itemId}/status`, {
 				method: 'PATCH',
 				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ status: newStatus })
+				body: JSON.stringify(body)
 			});
 
 			if (res.status === 401) {
@@ -90,6 +100,8 @@
 			}
 
 			toast.success('Order item status updated successfully');
+			showDatePickerForItem = null;
+			selectedDeliveryDate = undefined;
 			await loadOrders();
 		} catch (err: any) {
 			console.error(err);
@@ -97,6 +109,22 @@
 		} finally {
 			updatingItemId = null;
 		}
+	}
+
+	function handleAcceptClick(itemId: number) {
+		showDatePickerForItem = itemId;
+		selectedDeliveryDate = undefined;
+	}
+
+	function handleAcceptWithDate(itemId: number) {
+		if (!selectedDeliveryDate) {
+			toast.error('Please select a delivery date');
+			return;
+		}
+		// Convert DateValue to Date and format
+		const date = new Date(selectedDeliveryDate.year, selectedDeliveryDate.month - 1, selectedDeliveryDate.day);
+		const dateStr = format(date, 'yyyy-MM-dd');
+		updateItemStatus(itemId, 'accepted', dateStr);
 	}
 
 	function getStatusColor(status: string): string {
@@ -201,19 +229,63 @@
 									<div class="flex gap-2 mt-2 flex-wrap">
 										{#if item.status === 'pending'}
 											<!-- Step 1: Accept or Reject -->
-											<Button
-												size="sm"
-												variant="default"
-												disabled={updatingItemId === item.id}
-												onclick={() => updateItemStatus(item.id, 'accepted')}
-											>
-												Accept Order
-											</Button>
+											{#if showDatePickerForItem === item.id}
+												<div class="flex flex-col gap-2 border rounded-lg p-4 bg-muted/30">
+													<span class="text-sm font-medium">Select Delivery Date</span>
+													<Popover.Root>
+														<Popover.Trigger>
+															<Button
+																variant="outline"
+																class="w-[240px] justify-start text-left font-normal"
+															>
+																<CalendarIcon class="mr-2 h-4 w-4" />
+																{selectedDeliveryDate ? (() => {
+																	const date = new Date(selectedDeliveryDate.year, selectedDeliveryDate.month - 1, selectedDeliveryDate.day);
+																	return format(date, 'PPP');
+																})() : 'Pick a date'}
+															</Button>
+														</Popover.Trigger>
+														<Popover.Content class="w-auto p-0" align="start">
+															<Calendar
+																type="single"
+																bind:value={selectedDeliveryDate}
+															/>
+														</Popover.Content>
+													</Popover.Root>
+													<div class="flex gap-2">
+														<Button
+															size="sm"
+															variant="default"
+															disabled={updatingItemId === item.id || !selectedDeliveryDate}
+															onclick={() => handleAcceptWithDate(item.id)}
+														>
+															Confirm Accept
+														</Button>
+														<Button
+															size="sm"
+															variant="outline"
+															disabled={updatingItemId === item.id}
+															onclick={() => { showDatePickerForItem = null; selectedDeliveryDate = undefined; }}
+														>
+															Cancel
+														</Button>
+													</div>
+												</div>
+											{:else}
+												<Button
+													size="sm"
+													variant="default"
+													disabled={updatingItemId === item.id}
+													onclick={() => handleAcceptClick(item.id)}
+												>
+													Accept Order
+												</Button>
+											{/if}
 
 											<Button
 												size="sm"
 												variant="destructive"
-												disabled={updatingItemId === item.id}
+												disabled={updatingItemId === item.id || showDatePickerForItem === item.id}
 												onclick={() => updateItemStatus(item.id, 'rejected')}
 											>
 												Reject Order
